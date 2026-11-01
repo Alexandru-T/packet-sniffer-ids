@@ -1,0 +1,19 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build-and-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Instalare dependente
+        run: sudo apt-get update && sudo apt-get install -y build-essential libpcap-dev cppcheck valgrind
+      - name: Analiza statica (cppcheck)
+        run: cppcheck --enable=warning,style,performance --error-exitcode=1 src/
+      - name: Build fara warning-uri (-Wall -Werror)
+        run: make
