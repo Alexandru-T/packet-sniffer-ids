@@ -27,8 +27,8 @@ void print_ip(const u_char* ip){
 }
 
 void arp_handler(const u_char *packet){
-    struct sniff_arp* arp;
-    arp = (struct sniff_arp*)(packet + SIZE_ETHERNET);
+    const struct sniff_arp* arp;
+    arp = reinterpret_cast<const struct sniff_arp*>(packet + SIZE_ETHERNET);
 
     if (arp->arp_hlen != 6 || arp->arp_plen != 4) return; // doesn't use MAC or IPV4, ignore
 
@@ -92,6 +92,7 @@ void udp_handler(const struct sniff_ip *ip, const u_char *packet, u_int size_ip)
 
 }
 
+
 void packet_handler(u_char *user_data, const struct pcap_pkthdr *header, const u_char *packet){
     (void)user_data;
     (void)header;
@@ -122,10 +123,11 @@ void packet_handler(u_char *user_data, const struct pcap_pkthdr *header, const u
     switch(ip->ip_p){
         case 6:
             tcp_handler(ip, packet, size_ip);
-        break;
+            break;
 
         case 17:
             udp_handler(ip, packet, size_ip);
+            break;
 
         default:
             return;
@@ -144,8 +146,8 @@ int main() {
     char filter_exp[] = "";          /* The filter expression */
     bpf_u_int32 mask;                /* The netmask of our sniffing device */
     bpf_u_int32 net;                 /* The IP of our sniffing device */
-    struct pcap_pkthdr header;	     /* The header that pcap gives us */
-    const u_char *packet;		     /* The actual packet */
+    //struct pcap_pkthdr header;	     /* The header that pcap gives us */
+    //const u_char *packet;		     /* The actual packet */
 
     /* Define the device */
     if (pcap_findalldevs(&interface, errbuf) == -1 || interface == nullptr){
@@ -203,8 +205,6 @@ int main() {
 
 
     pcap_freealldevs(interface);
-    (void)header;
-    (void)packet;
 
     return 0;
 }
