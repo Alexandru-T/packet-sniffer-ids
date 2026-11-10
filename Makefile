@@ -5,10 +5,13 @@ LDFLAGS = -lpcap
 TARGET = sniffer
 SRCS = $(wildcard src/*.cpp)
 
-all: $(TARGET)
+all: check $(TARGET)
 
 $(TARGET): $(SRCS)
 	$(CXX) $(CXXFLAGS) $(SRCS) -o $(TARGET) $(LDFLAGS)
 
 clean:
 	rm -f $(TARGET) *.o
+
+check:
+	cppcheck --enable=warning,style,performance --error-exitcode=1 src/
