@@ -2,11 +2,95 @@
 #include <stdlib.h>
 #include <pcap.h>
 #include <headers.h>
+#include <iomanip>
 
 using namespace std;
 
 //ethernet headers are always exactly 14 Bytes
 #define SIZE_ETHERNET 14
+#define SIZE_UDP 8
+#define SIZE_ARP 28
+
+void print_mac(const u_char *mac) {
+    cout << hex << setfill('0');
+    for (int i = 0; i < 6; ++i) {
+        cout << setw(2) << (int)mac[i];
+        if (i < 5) cout << ":";
+    }
+    cout << dec; // reset to decimal
+}
+void print_ip(const u_char* ip){
+    for(int i = 0; i < 4; ++i){
+        cout<<(int)ip[i];
+        if(i < 3)cout << ".";
+    }
+}
+
+void arp_handler(const u_char *packet){
+    struct sniff_arp* arp;
+    arp = (struct sniff_arp*)(packet + SIZE_ETHERNET);
+
+    if (arp->arp_hlen != 6 || arp->arp_plen != 4) return; // doesn't use MAC or IPV4, ignore
+
+    if(ntohs(arp->arp_oper) == 1)
+    {
+        cout << "[ARP] request: " << "tell "; 
+        print_ip(arp->arp_spa);
+        cout << " who has ";
+        print_ip(arp->arp_tpa);
+        cout << "\n";
+    } else if(ntohs(arp->arp_oper) == 2){
+        cout << "[ARP] reply: ";
+        print_ip(arp->arp_spa);
+        cout << " is at ";
+        print_mac(arp->arp_sha);
+        cout << "\n";
+    }else return;
+
+    (void)packet;
+}
+
+void tcp_handler(const struct sniff_ip *ip, const u_char *packet, u_int size_ip){
+    const struct sniff_tcp *tcp;             //the tcp header
+    
+
+    tcp = reinterpret_cast<const struct sniff_tcp*>(packet + SIZE_ETHERNET + size_ip);
+    u_int size_tcp = TH_OFF(tcp) * 4;
+    if(size_tcp < 20){
+        cout << "Invalid TCP header length: " << size_tcp << "\n";
+        return;
+    }
+
+    //const char *payload;                     //the actual payload
+    //payload = (const char*)(packet + SIZE_ETHERNET + size_ip + size_tcp);
+    //(void)(payload);
+
+    string ip_source = inet_ntoa(ip->ip_src);
+    string ip_dest = inet_ntoa(ip->ip_dst);
+
+    u_short port_source = ntohs(tcp->th_sport);
+    u_short port_dest = ntohs(tcp->th_dport);
+
+    
+    cout << "[TCP]  " << ip_source << ":" << port_source << " --->" <<
+    ip_dest <<  ":" << port_dest << "\n";
+}
+
+void udp_handler(const struct sniff_ip *ip, const u_char *packet, u_int size_ip){
+    const struct sniff_udp* udp;             //the tcp header
+    
+    udp = reinterpret_cast<const struct sniff_udp*>(packet + SIZE_ETHERNET + size_ip);
+
+    string ip_source = inet_ntoa(ip->ip_src);
+    string ip_dest = inet_ntoa(ip->ip_dst);
+
+    u_short port_source = ntohs(udp->uh_sport);
+    u_short port_dest = ntohs(udp->uh_dport);
+
+    cout << "[UDP]  " << ip_source << ":" << port_source << " --->" <<
+    ip_dest <<  ":" << port_dest << "\n";
+
+}
 
 void packet_handler(u_char *user_data, const struct pcap_pkthdr *header, const u_char *packet){
     (void)user_data;
@@ -14,43 +98,41 @@ void packet_handler(u_char *user_data, const struct pcap_pkthdr *header, const u
 
     const struct sniff_ethernet *ethernet;   //the ethernet header
     const struct sniff_ip *ip;               //the ip header
-    const struct sniff_tcp *tcp;             //the tcp header
-    const char *payload;                     //the actual payload
+    
+    
 
     u_int size_ip = 0;
-    u_int size_tcp = 0;
 
-    ethernet = (struct sniff_ethernet*)(packet);
+    ethernet = reinterpret_cast<const struct sniff_ethernet*>(packet);
     //verify if it's an IPv4 packet
     if (ntohs(ethernet->ether_type) != 0x0800) {
-        return; // not IP
+        // not IP
+        if(ntohs(ethernet->ether_type) == 0x806) //ARP
+            arp_handler(packet); 
+        return;
     }
 
-    ip = (struct sniff_ip*)(packet + SIZE_ETHERNET);
+    ip = reinterpret_cast<const struct sniff_ip*>(packet + SIZE_ETHERNET);
     size_ip = IP_HL(ip) * 4;
     if(size_ip < 20){
         cout << "Invalid IP header length: " << size_ip << "\n";
         return;
     }
-    //verify if the protocol is TCP
-    if (ip->ip_p != 6) { // 1 = ICMP, 6 = TCP, 17 = UDP
-        return; // not TCP
-    }
+    
+    switch(ip->ip_p){
+        case 6:
+            tcp_handler(ip, packet, size_ip);
+        break;
 
-    tcp = (struct sniff_tcp*)(packet + SIZE_ETHERNET + size_ip);
-    size_tcp = TH_OFF(tcp) * 4;
-    if(size_tcp < 20){
-        cout << "Invalid TCP header length: " << size_tcp << "\n";
-        return;
-    }
+        case 17:
+            udp_handler(ip, packet, size_ip);
 
-    payload = (const char*)(packet + SIZE_ETHERNET + size_ip + size_tcp);
-    cout << "Got a valid packet, IP header: " << size_ip 
-         << " bytes, TCP header: " << size_tcp << " bytes.\n";
+        default:
+            return;
+    }
+    
     (void)(ethernet);
     (void)(ip);
-    (void)(tcp);
-    (void)(payload);
 }
 
 int main() {
@@ -59,7 +141,7 @@ int main() {
     pcap_if_t *interface = nullptr;  /* Device to sniff on */
     pcap_t *handle;                  /* Session handle */
     struct bpf_program fp;           /* The compiled filter expression */
-    char filter_exp[] = "";   /* The filter expression */
+    char filter_exp[] = "";          /* The filter expression */
     bpf_u_int32 mask;                /* The netmask of our sniffing device */
     bpf_u_int32 net;                 /* The IP of our sniffing device */
     struct pcap_pkthdr header;	     /* The header that pcap gives us */
@@ -107,6 +189,7 @@ int main() {
         pcap_freealldevs(interface);
         return 2;
     }
+    
     pcap_freecode(&fp);
 
     /* Let the sniffing start */
