@@ -31,6 +31,22 @@ struct sniff_ip{
 #define IP_HL(ip)       (((ip)->ip_vhl) & 0x0f)
 #define IP_V(ip)        (((ip)->ip_vhl) >> 4)
 
+//ARP header
+
+struct sniff_arp{
+    u_short arp_htype;     //Hardware type
+    u_short arp_ptype;     //Protocol type
+    u_char arp_hlen;       //Hardware address length
+    u_char arp_plen;       //Protocol address length
+    u_short arp_oper;      //Operation code 1 - request, 2 - reply
+
+    u_char arp_sha[6];     //Sender hardware address
+    u_char arp_spa[4];     //Sender protocol address
+
+    u_char arp_tha[6];     //Target hardware address
+    u_char arp_tpa[4];     //Target protocol address
+};
+
 //TCP header
 typedef u_int tcp_seq;
 
@@ -54,4 +70,13 @@ struct sniff_tcp{
     u_short th_win;        //window
     u_short th_sum;        //checksum
     u_short th_urp;        //urgent pointer
+};
+
+//UDP header
+
+struct sniff_udp{
+    u_short uh_sport;      //source port
+    u_short uh_dport;      //destination port
+    u_short uh_ulen;       //udp length
+    u_short uh_sum;        //checksum
 };
