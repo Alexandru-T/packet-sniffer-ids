@@ -80,3 +80,15 @@ struct sniff_udp{
     u_short uh_ulen;       //udp length
     u_short uh_sum;        //checksum
 };
+
+//ICMP header
+
+struct sniff_icmp {
+    u_char  icmp_type;      // Tipul mesajului (ex: 8 pentru Ping, 0 pentru Reply)
+    u_char  icmp_code;      // Sub-codul erorii (mai specific)
+    u_short icmp_sum;       // Checksum
+    
+    // this depend on the type, for ping they are:
+    u_short icmp_id;        // ping ID
+    u_short icmp_seq;       // sequence number (ping 1, ping 2 ...)
+};

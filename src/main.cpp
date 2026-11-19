@@ -10,6 +10,7 @@ using namespace std;
 #define SIZE_ETHERNET 14
 #define SIZE_UDP 8
 #define SIZE_ARP 28
+#define SIZE_ICMP 8
 
 void print_mac(const u_char *mac) {
     cout << hex << setfill('0');
@@ -92,6 +93,41 @@ void udp_handler(const struct sniff_ip *ip, const u_char *packet, u_int size_ip)
 
 }
 
+void icmp_handler(const struct sniff_ip *ip, const u_char *packet, u_int size_ip){
+    const struct sniff_icmp* icmp;        //the icmp header
+
+    icmp = reinterpret_cast<const struct sniff_icmp*>(packet + SIZE_ETHERNET + size_ip);
+
+    string ip_source = inet_ntoa(ip->ip_src);
+    string ip_dest = inet_ntoa(ip->ip_dst);
+
+    cout << "[ICMP] " << ip_source << " ---> " << ip_dest << " | ";
+
+    switch(icmp->icmp_type){
+        case 8:
+            cout << "Echo request (ping) id=" << ntohs(icmp->icmp_id) << " seq=" << ntohs(icmp->icmp_seq) << "\n";
+            break;
+
+        case 0:
+            cout << "Echo reply (pong) id=" << ntohs(icmp->icmp_id) << " seq=" << ntohs(icmp->icmp_seq) << "\n";
+            break;
+        
+        case 3:
+            cout << "Destination unreachable (code=" << (int)icmp->icmp_code << ")\n";
+            break;
+
+        case 11:
+            cout << "Time exceeded (code=" << (int)icmp->icmp_code << ")\n";
+            break;
+        
+        default:
+            cout << "Type =" << (int)icmp->icmp_type << " code=" << (int)icmp->icmp_code << "\n";
+            break;
+    }
+
+}
+
+
 
 void packet_handler(u_char *user_data, const struct pcap_pkthdr *header, const u_char *packet){
     (void)user_data;
@@ -121,6 +157,10 @@ void packet_handler(u_char *user_data, const struct pcap_pkthdr *header, const u
     }
     
     switch(ip->ip_p){
+        case 1:
+            icmp_handler(ip, packet, size_ip);
+            break;
+       
         case 6:
             tcp_handler(ip, packet, size_ip);
             break;
@@ -137,39 +177,63 @@ void packet_handler(u_char *user_data, const struct pcap_pkthdr *header, const u
     (void)(ip);
 }
 
-int main() {
+int main(int argc, const char *argv[]) {
 
     char errbuf[PCAP_ERRBUF_SIZE];   /* Error string */
-    pcap_if_t *interface = nullptr;  /* Device to sniff on */
     pcap_t *handle;                  /* Session handle */
     struct bpf_program fp;           /* The compiled filter expression */
-    char filter_exp[] = "";          /* The filter expression */
+    string dev_name = "";
+    string filter_exp = "";
+
+    for (int i = 1; i < argc; ++i) {
+        if (string(argv[i]) == "-i") {
+            if (i + 1 < argc) {
+                dev_name = argv[++i];
+            } else {
+                cerr << "Usage: " << argv[0] << " [-i interface] [filter]\n";
+                return 2;
+            }
+        } else {
+            if (!filter_exp.empty()) {
+                filter_exp += " ";
+            }
+            filter_exp += argv[i];
+        }
+    }
+
     bpf_u_int32 mask;                /* The netmask of our sniffing device */
     bpf_u_int32 net;                 /* The IP of our sniffing device */
     //struct pcap_pkthdr header;	     /* The header that pcap gives us */
     //const u_char *packet;		     /* The actual packet */
 
     /* Define the device */
-    if (pcap_findalldevs(&interface, errbuf) == -1 || interface == nullptr){
-        cerr << "didn't find an interface " << errbuf << "\n";
+    if (dev_name.empty()) {
+        pcap_if_t *interface = nullptr;  /* Device to sniff on */
+        if (pcap_findalldevs(&interface, errbuf) == -1 || interface == nullptr) {
+            cerr << "Didn't find an interface: " << errbuf << "\n";
+            return 2;
+        }
+        dev_name = interface->name;
         pcap_freealldevs(interface);
-        return 2;
+        interface = nullptr;
     }
 
-    cout << "Selected device: " << interface->name << "\n";
+    cout << "Selected device: " << dev_name << "\n";
+    if (!filter_exp.empty()) {
+        cout << "Applying filter: " << filter_exp << "\n";
+    }
 
     /* Find the properties for the device */
-    if (pcap_lookupnet(interface->name, &net, &mask, errbuf) == -1){
-        cerr << "Can't get netmask for device " << interface->name <<"\n";
+    if (pcap_lookupnet(dev_name.c_str(), &net, &mask, errbuf) == -1){
+        cerr << "Can't get netmask for device " << dev_name.c_str() <<"\n";
         net = 0;
         mask = 0;
     }
 
     /* Open the session in promiscuous mode */
-    handle = pcap_open_live(interface->name, BUFSIZ, 1, 1000, errbuf);
+    handle = pcap_open_live(dev_name.c_str(), BUFSIZ, 1, 1000, errbuf);
     if(handle == NULL){
-        cerr << "Couldn't open device " << interface->name << errbuf << "\n";
-        pcap_freealldevs(interface);
+        cerr << "Couldn't open device " << dev_name.c_str() << errbuf << "\n";
         return 2;
     }
 
@@ -178,17 +242,15 @@ int main() {
     //    return 2;
     //}
 
-
     /* Compile and apply the filter */
-    if(pcap_compile(handle, &fp, filter_exp, 0, mask) == -1){
+    if(pcap_compile(handle, &fp, filter_exp.c_str(), 0, mask) == -1){
         cerr << "Couldn't parse filter " << filter_exp << " | " << pcap_geterr(handle);
-        pcap_freealldevs(interface);
         return 2;
     }
     if(pcap_setfilter(handle, &fp) == -1){
         cerr << "Couldn't install filter " << filter_exp << " | " << pcap_geterr(handle);
+        pcap_close(handle);
         pcap_freecode(&fp);
-        pcap_freealldevs(interface);
         return 2;
     }
     
@@ -198,13 +260,8 @@ int main() {
     if (pcap_loop(handle, 1000, packet_handler, NULL) == -1) {
         cerr << "Error in pcap_loop: " << pcap_geterr(handle) << "\n";
     }
-	
 
     pcap_close(handle);
-
-
-
-    pcap_freealldevs(interface);
 
     return 0;
 }
