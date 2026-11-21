@@ -3,14 +3,87 @@
 #include <pcap.h>
 #include <headers.h>
 #include <iomanip>
+#include <unordered_map>
+#include <unordered_set>
+#include <ctime>
+#include <vector>
+#include <csignal>
 
 using namespace std;
 
-//ethernet headers are always exactly 14 Bytes
 #define SIZE_ETHERNET 14
 #define SIZE_UDP 8
 #define SIZE_ARP 28
 #define SIZE_ICMP 8
+
+struct IpStats{
+    time_t window_start = 0;
+    int syn_count = 0;
+    unordered_set<u_short> ports;
+    bool scan_alerted = false;
+    bool flood_alerted = false;
+};
+
+unordered_map<string,IpStats> tracker;
+
+const int TIME_WINDOW = 5;         // 5 sec window
+const size_t PORT_SCAN_LIMIT = 15; // >= 15 distinct ports in 5s => Port Scan
+const int SYN_FLOOD_LIMIT = 50;    // >= 50 SYN packets in 5s => SYN Flood
+
+vector<string> alert_log;
+pcap_t *global_handle = nullptr;
+
+string get_timestamp() {
+    time_t now = time(nullptr);
+    struct tm timeinfo;
+    localtime_r(&now, &timeinfo); // varianta thread-safe pe Linux
+
+    char buf[20];
+    strftime(buf, sizeof(buf), "%H:%M:%S", &timeinfo);
+    return string(buf);
+}
+
+void handle_sigint(int signum) {
+    (void)signum;
+    if (global_handle != nullptr) {
+        pcap_breakloop(global_handle);
+    }
+}
+
+void detect_attacks(const string &ip_source, u_short port_dest, u_char flags){
+    if(!(flags & TH_SYN) || (flags & TH_ACK)) return;
+
+    time_t now = time(nullptr);
+
+    IpStats &stats = tracker[ip_source];
+
+    if((stats.window_start == 0) || (now - stats.window_start) >= TIME_WINDOW){
+        stats.window_start = now;
+        stats.syn_count = 0;
+        stats.ports.clear();
+        stats.scan_alerted = false;
+        stats.flood_alerted = false;
+    }
+
+    stats.syn_count++;
+    stats.ports.insert(port_dest);
+
+    if (!stats.scan_alerted && stats.ports.size()>= PORT_SCAN_LIMIT){
+        string msg = "[" + get_timestamp() + "] PORT SCAN from " + ip_source + " (" + to_string(stats.ports.size()) + " unique ports)";
+        cout << "\033[1;31m[IDS ALERT] PORT SCAN detected from " << ip_source
+             << " (" << stats.ports.size() << " unique ports in " << TIME_WINDOW << "s)\033[0m\n";
+        alert_log.push_back(msg);
+        stats.scan_alerted = true;
+    }
+
+    if (!stats.flood_alerted && stats.syn_count >= SYN_FLOOD_LIMIT){
+        string msg = "[" + get_timestamp() + "] SYN FLOOD from " + ip_source + " (" + to_string(stats.syn_count) + " SYN packets)";
+        cout << "\033[1;31m[IDS ALERT] SYN FLOOD detected from " << ip_source
+             << " (" << stats.syn_count << " SYN packets in " << TIME_WINDOW << "s)\033[0m\n";
+        alert_log.push_back(msg);
+        stats.flood_alerted = true;
+    }
+}
 
 void print_mac(const u_char *mac) {
     cout << hex << setfill('0');
@@ -75,6 +148,8 @@ void tcp_handler(const struct sniff_ip *ip, const u_char *packet, u_int size_ip)
     
     cout << "[TCP]  " << ip_source << ":" << port_source << " --->" <<
     ip_dest <<  ":" << port_dest << "\n";
+
+    detect_attacks(ip_source, port_dest, tcp->th_flags);
 }
 
 void udp_handler(const struct sniff_ip *ip, const u_char *packet, u_int size_ip){
@@ -236,6 +311,8 @@ int main(int argc, const char *argv[]) {
         cerr << "Couldn't open device " << dev_name.c_str() << errbuf << "\n";
         return 2;
     }
+    global_handle = handle;
+    signal(SIGINT, handle_sigint);
 
     //if (pcap_datalink(handle)!=DLT_EN10MB){
     //    cerr << "Device" << interface->name << " doesn't provide ethernet headers - nt supported\n";
@@ -257,9 +334,20 @@ int main(int argc, const char *argv[]) {
     pcap_freecode(&fp);
 
     /* Let the sniffing start */
-    if (pcap_loop(handle, 1000, packet_handler, NULL) == -1) {
+    if (pcap_loop(handle, 0, packet_handler, NULL) == -1) {
         cerr << "Error in pcap_loop: " << pcap_geterr(handle) << "\n";
     }
+
+    cout << "\n========== FINAL IDS REPORT ==========\n";
+    if (alert_log.empty()) {
+        cout << "No attacks detected.\n";
+    } else {
+        cout << "Total detected alerts: " << alert_log.size() << "\n";
+        for (size_t i = 0; i < alert_log.size(); ++i) {
+            cout << "  " << (i + 1) << ". " << alert_log[i] << "\n";
+        }
+    }
+    cout << "======================================\n";
 
     pcap_close(handle);
 
