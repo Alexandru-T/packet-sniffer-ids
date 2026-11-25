@@ -1,0 +1,31 @@
+services:
+  victim:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.victim
+    container_name: victim
+    cap_add:
+      - NET_RAW
+      - NET_ADMIN
+    networks:
+      lab_net:
+        ipv4_address: 172.20.0.10
+
+  attacker:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.attacker
+    container_name: attacker
+    cap_add:
+      - NET_RAW
+      - NET_ADMIN
+    networks:
+      lab_net:
+        ipv4_address: 172.20.0.20
+
+networks:
+  lab_net:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/24
