@@ -95,13 +95,14 @@ sudo ./sniffer -i <interfata> -R rules/test.conf
 
 # Analiză offline dintr-un fișier .pcap
 ./sniffer -f captura.pcap -R rules/test.conf
+```
 
 ### Argumente CLI
-| Flag | Descriere                                  | Exemplu              |
-|      |                                            |                      |
-| `-i` | Interfața de rețea pe care se face captura | `-i eth0`            |
-| `-r` | Calea către fișierul de reguli IDS         | `-r rules/test.conf` |
-| `-f` | Fișier .pcap pentru analiză offline        | `-f test.pcap`       |
+| Flag | Descriere | Exemplu |
+| :--- | :--- | :--- |
+| `-i` | Interfața de rețea pe care se face captura | `-i eth0` |
+| `-R` | Calea către fișierul de reguli IDS | `-R rules/test.conf` |
+| `-f` | Fișier `.pcap` pentru analiză offline | `-f test.pcap` |
 
 ## Formatul fișierului de reguli
 
