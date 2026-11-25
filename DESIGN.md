@@ -31,14 +31,14 @@ Aplicația este construită pe o arhitectură modulară orientată pe flux de da
 
 Fiecare pachet capturat este decapsulat secvențial prin avansarea unui pointer peste headerele protocoalelor definite în `include/headers.h`:
 
-| Strat OSI     | Protocol | Lungime Header              | Câmpuri inspectate                                                                    |
-|               |          |                             |                                                                                       |
-| **Layer 2**   | Ethernet | 14 octeți (fix)             | `ether_type` (`0x0800` = IPv4, `0x0806` = ARP), adrese MAC sursă/destinație           |
-| **Layer 2/3** | ARP      | 28 octeți (IPv4/Eth)        | Operație (Request/Reply), IP sursă (`spa`), MAC sursă (`sha`)                         |
-| **Layer 3**   | IPv4     | `ihl * 4` (20–60 octeți)    | IP sursă (`saddr`), IP destinație (`daddr`), `protocol` (`6`=TCP, `17`=UDP, `1`=ICMP) |
-| **Layer 4**   | TCP      | `doff * 4` (min. 20 octeți) | Port sursă, port destinație, flag-uri de control (`SYN`, `ACK`)                       |
-| **Layer 4**   | UDP      | 8 octeți (fix)              | Port sursă, port destinație, lungime                                                  |
-| **Layer 4**   | ICMP     | 8 octeți                    | Tip mesaj (ex: Echo Request / Reply)                                                  |
+| Strat OSI | Protocol | Lungime Header | Câmpuri inspectate |
+| :--- | :--- | :--- | :--- |
+| **Layer 2** | Ethernet | 14 octeți (fix) | `ether_type` (`0x0800` = IPv4, `0x0806` = ARP), adrese MAC sursă/destinație |
+| **Layer 2/3** | ARP | 28 octeți (IPv4/Eth) | Operație (Request/Reply), IP sursă (`spa`), MAC sursă (`sha`) |
+| **Layer 3** | IPv4 | `ihl * 4` (20–60 octeți) | IP sursă (`saddr`), IP destinație (`daddr`), `protocol` (`6`=TCP, `17`=UDP, `1`=ICMP) |
+| **Layer 4** | TCP | `doff * 4` (min. 20 octeți) | Port sursă, port destinație, flag-uri de control (`SYN`, `ACK`) |
+| **Layer 4** | UDP | 8 octeți (fix) | Port sursă, port destinație, lungime |
+| **Layer 4** | ICMP | 8 octeți | Tip mesaj (ex: Echo Request / Reply) |
 
 ---
 
